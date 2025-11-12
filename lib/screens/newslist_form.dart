@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:football_news/widgets/left_drawer.dart';
+import 'dart:convert';
+import 'package:provider/provider.dart';
+import 'package:pbp_django_auth/pbp_django_auth.dart';
+import 'package:football_news/screens/menu.dart';
 
 class NewsFormPage extends StatefulWidget {
   const NewsFormPage({super.key});
@@ -25,8 +29,106 @@ class _NewsFormPageState extends State<NewsFormPage> {
     'analysis',
   ];
 
+  Future<void> _submitForm(CookieRequest request) async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final body = jsonEncode({
+      "title": _title,
+      "content": _content,
+      "thumbnail": _thumbnail,
+      "category": _category,
+      "is_featured": _isFeatured,
+    });
+
+    // TODO: Ganti URL sesuai backend kalian. Tambahkan trailing slash.
+    // Untuk Chrome (desktop): http://localhost:8000/
+    // Untuk Android emulator: http://10.0.2.2:8000/
+    const String url = "http://[Your_APP_URL]/create-flutter/";
+
+    // Kirim request ke server (jika backend tersedia). Tangani response.
+    Map<String, dynamic>? response;
+    try {
+      response = await request.postJson(url, body);
+    } catch (e) {
+      response = null;
+    }
+
+    // Tampilkan dialog berisi input yang dimasukkan dan hasil jika ada
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) {
+        final success = response != null &&
+            (response['status'] == 'success' || response['status'] == true);
+        return AlertDialog(
+          title:
+              Text(success ? 'Berita berhasil disimpan' : 'Informasi Berkas'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Judul: $_title'),
+                const SizedBox(height: 4),
+                Text('Isi: ${_content.length > 200 ? _content.substring(0, 200) + '...' : _content}'),
+                const SizedBox(height: 4),
+                Text('Kategori: $_category'),
+                const SizedBox(height: 4),
+                Text('Thumbnail: ${_thumbnail.isNotEmpty ? _thumbnail : 'Tidak ada'}'),
+                const SizedBox(height: 4),
+                Text('Unggulan: ${_isFeatured ? "Ya" : "Tidak"}'),
+                const SizedBox(height: 8),
+                if (response != null) ...[
+                  const Divider(),
+                  Text('Server response:'),
+                  Text(response.toString(), style: const TextStyle(fontSize: 12)),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: const Text('OK'),
+              onPressed: () {
+                Navigator.pop(context); // close dialog
+                // Reset form
+                _formKey.currentState!.reset();
+                setState(() {
+                  _category = "update";
+                  _isFeatured = false;
+                  _title = "";
+                  _content = "";
+                  _thumbnail = "";
+                });
+
+                if (success) {
+                  // optional: navigate back to home
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => MyHomePage()),
+                  );
+                } else {
+                  // show snackbar if server failed or unreachable
+                  ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(
+                      SnackBar(
+                        content: Text(response == null
+                            ? 'Gagal menghubungi server.'
+                            : (response['message'] ?? 'Something went wrong')),
+                      ),
+                    );
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final request = context.watch<CookieRequest>();
     return Scaffold(
       appBar: AppBar(
         title: const Center(
@@ -48,6 +150,7 @@ class _NewsFormPageState extends State<NewsFormPage> {
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: TextFormField(
+                  initialValue: _title,
                   decoration: InputDecoration(
                     hintText: "Judul Berita",
                     labelText: "Judul Berita",
@@ -57,7 +160,7 @@ class _NewsFormPageState extends State<NewsFormPage> {
                   ),
                   onChanged: (String? value) {
                     setState(() {
-                      _title = value!;
+                      _title = value ?? "";
                     });
                   },
                   validator: (String? value) {
@@ -73,6 +176,7 @@ class _NewsFormPageState extends State<NewsFormPage> {
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: TextFormField(
+                  initialValue: _content,
                   maxLines: 5,
                   decoration: InputDecoration(
                     hintText: "Isi Berita",
@@ -83,7 +187,7 @@ class _NewsFormPageState extends State<NewsFormPage> {
                   ),
                   onChanged: (String? value) {
                     setState(() {
-                      _content = value!;
+                      _content = value ?? "";
                     });
                   },
                   validator: (String? value) {
@@ -114,7 +218,7 @@ class _NewsFormPageState extends State<NewsFormPage> {
                       .toList(),
                   onChanged: (String? newValue) {
                     setState(() {
-                      _category = newValue!;
+                      _category = newValue ?? "update";
                     });
                   },
                 ),
@@ -124,6 +228,7 @@ class _NewsFormPageState extends State<NewsFormPage> {
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: TextFormField(
+                  initialValue: _thumbnail,
                   decoration: InputDecoration(
                     hintText: "URL Thumbnail (opsional)",
                     labelText: "URL Thumbnail",
@@ -133,7 +238,7 @@ class _NewsFormPageState extends State<NewsFormPage> {
                   ),
                   onChanged: (String? value) {
                     setState(() {
-                      _thumbnail = value!;
+                      _thumbnail = value ?? "";
                     });
                   },
                 ),
@@ -160,46 +265,10 @@ class _NewsFormPageState extends State<NewsFormPage> {
                   padding: const EdgeInsets.all(8.0),
                   child: ElevatedButton(
                     style: ButtonStyle(
-                      backgroundColor: WidgetStateProperty.all(
+                      backgroundColor: MaterialStateProperty.all(
                           Theme.of(context).colorScheme.primary),
                     ),
-                    onPressed: () {
-                      if (_formKey.currentState!.validate()) {
-                        showDialog(
-                          context: context,
-                          builder: (context) {
-                            return AlertDialog(
-                              title: const Text('Berita berhasil tersimpan'),
-                              content: SingleChildScrollView(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('Judul: $_title'),
-                                    Text('Isi: $_content'),
-                                    Text('Kategori: $_category'),
-                                    Text('Thumbnail: $_thumbnail'),
-                                    Text('Unggulan: ${_isFeatured ? "Ya" : "Tidak"}'),
-                                  ],
-                                ),
-                              ),
-                              actions: [
-                                TextButton(
-                                  child: const Text('OK'),
-                                  onPressed: () {
-                                    Navigator.pop(context);
-                                    _formKey.currentState!.reset();
-                                    setState(() {
-                                      _category = "update";
-                                      _isFeatured = false;
-                                    });
-                                  },
-                                ),
-                              ],
-                            );
-                          },
-                        );
-                      }
-                    },
+                    onPressed: () => _submitForm(request),
                     child: const Text(
                       "Simpan",
                       style: TextStyle(color: Colors.white),
